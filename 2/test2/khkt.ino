@@ -40,6 +40,22 @@ void hienThi(int led[], int so, int vtri) {
 int x_normal=23;
 int x_busy=30;
 int v_normal=3;
+void set_by_state() {
+  switch (state) {
+    case 0: // xanh L1-2
+      setLeds(HIGH, LOW, LOW,  LOW, LOW, HIGH);
+      break;
+    case 1: // vàng L1-2
+      setLeds(LOW, HIGH, LOW,  LOW, LOW, HIGH);
+      break;
+    case 2: // xanh L3-4
+      setLeds(LOW, LOW, HIGH,  HIGH, LOW, LOW);
+      break;
+    case 3: // vàng L3-4
+      setLeds(LOW, LOW, HIGH,  LOW, HIGH, LOW);
+      break;
+  }
+}
 
 void xu_li_dac_biet(){
   // Xe ưu tiên hướng 3-4, hướng 1-2 đang xanh
@@ -66,7 +82,7 @@ void normal() {
 
   switch(state) {
     case 0: // XANH L1-2
-      setLeds(HIGH, LOW, LOW, LOW, LOW, HIGH); // G1 bat, R2 bat
+      //setLeds(HIGH, LOW, LOW, LOW, LOW, HIGH); // G1 bat, R2 bat
       if (time1 == 0) { 
         state = 1; 
         time1 = 3; // vang
@@ -74,7 +90,7 @@ void normal() {
       }
       break;
     case 1: // VÀNG L1-2
-      setLeds(LOW, HIGH, LOW, LOW, LOW, HIGH); // Y1 bat, R2 bat
+      //setLeds(LOW, HIGH, LOW, LOW, LOW, HIGH); // Y1 bat, R2 bat
       if (time1 == 0) { 
         state = 2; 
         // xanh l3-l4
@@ -93,7 +109,7 @@ void normal() {
       }
       break;
     case 2: // XANH L3-4
-      setLeds(LOW, LOW, HIGH, HIGH, LOW, LOW); // R1 bat, G2 bat
+      //setLeds(LOW, LOW, HIGH, HIGH, LOW, LOW); // R1 bat, G2 bat
       if (time2 == 0) { 
         state = 3; 
         time2 = 3; 
@@ -102,7 +118,7 @@ void normal() {
       break;
       
     case 3: // VÀNG L3-4
-      setLeds(LOW, LOW, HIGH, LOW, HIGH, LOW); // R1 bat, Y2 bat
+      //etLeds(LOW, LOW, HIGH, LOW, HIGH, LOW); // R1 bat, Y2 bat
       if (time2 == 0) {
         state = 0; 
         if(l12 < N_XE && l34 < N_XE){ // safe mode
@@ -163,12 +179,15 @@ void loop() {
 
   update_time();
 
+  set_by_state();
+
   if (millis() - lastTick >= 1000) {
-    lastTick = millis();
-    if (time1 > 0) time1--;
-    if (time2 > 0) time2--;
-    normal();
-  }
+   lastTick = millis();
+   if (time1 > 0) time1--;
+   if (time2 > 0) time2--;
+  normal();
+}
+
 }
 
 
