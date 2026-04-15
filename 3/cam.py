@@ -9,7 +9,7 @@ from ultralytics import YOLO
 # =========================
 try:
     # Timeout thấp để vòng lặp không bị khựng khi đọc Serial
-    ser = serial.Serial('COM3', 9600, timeout=0.01) 
+    ser = serial.Serial('COM4', 9600, timeout=0.01) 
     time.sleep(2)
     ser.flushInput()
     print("✅ Kết nối Arduino thành công")
@@ -29,20 +29,21 @@ cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
 # Tọa độ Lane (Giữ nguyên của bạn)
 LANES = {
-    "L1": np.array([[220, 0], [320, 0], [320, 170], [220, 170]]),
-    "L2": np.array([[320, 310], [420, 310], [420, 480], [320, 480]]),
-    "L3": np.array([[0, 240], [220, 240], [220, 310], [0, 310]]),
-    "L4": np.array([[420, 170], [640, 170], [640, 240], [420, 240]])
+    "L1": np.array([[278, 24], [343, 39], [309, 170], [244, 152]]),
+    "L2": np.array([[263, 334], [321, 346], [287, 481], [227, 474]]),
+    "L3": np.array([[61, 193], [202, 226], [186, 287], [46, 253]]),
+    "L4": np.array([[385, 213], [509, 248], [496, 303], [372, 272]]),
 }
-INTERSECTION = np.array([[220, 170], [420, 170], [420, 310], [220, 310]])
+INTERSECTION = np.array([[237, 174], [361, 209], [334, 325], [205, 293]])
 PRIORITY_CLASSES = ["fire trucks", "police car"]
 
 def in_poly(pt, poly):
     return cv2.pointPolygonTest(poly, pt, False) >= 0
 
 # Biến kiểm soát luồng dữ liệu
-waiting_for_ready = True  # Trạng thái chờ chu kỳ mới
-last_special_state = False # Trạng thái ghi nhớ có xe ưu tiên không
+waiting_for_ready = True # Mặc định bắt đầu sẽ đợi ESP chạy xong safe mode và gọi READY
+prio_sent_this_cycle = False   # Lưu vết đã gửi xe ưu tiên trong chu kỳ chưa
+empty_sent_this_cycle = False  # Lưu vết đã gửi làn trống trong chu kỳ chưa
 
 while True:
     ret, frame = cap.read()
@@ -93,32 +94,44 @@ while True:
     l34 = lane_count["L3"] + lane_count["L4"]
     data_str = f"L1:{lane_count['L1']},L2:{lane_count['L2']},L3:{lane_count['L3']},L4:{lane_count['L4']},P:{priority_lane}\n"
     
-    # Điều kiện đặc biệt: Có xe ưu tiên HOẶC một hướng trống hoàn toàn
-    is_special_now = (priority_lane != "0") or (l12 > 0 and l34 == 0) or (l34 > 0 and l12 == 0)
+    # Phân tách Điều kiện đặc biệt
+    prio_special = (priority_lane != "0")
+    empty_special = (l12 > 0 and l34 == 0) or (l34 > 0 and l12 == 0)
 
-    # 1. Kiểm tra READY từ Arduino (Kết thúc chu kỳ)
-    if ser.in_waiting > 0:
+    # 1. Đọc tín hiệu từ Arduino (đọc sạch buffer để tránh đọng)
+    while ser.in_waiting > 0:
         try:
             line = ser.readline().decode('utf-8').strip()
-            if "READY" in line:
-                waiting_for_ready = False
-                print("🔄 Arduino READY - Bắt đầu chu kỳ mới")
+            if len(line) > 0:
+                if "READY" in line:
+                    waiting_for_ready = False
+                    prio_sent_this_cycle = False   # Mở khóa báo ưu tiên cho chu kỳ mới
+                    empty_sent_this_cycle = False  # Mở khóa báo làn trống cho chu kỳ mới
+                    print("🔄 Arduino READY - Bắt đầu chu kỳ mới")
+                else:
+                    print(f"[{line}]")  # In tất cả các log khác để debug
         except: pass
 
-    # 2. Gửi dữ liệu Đặc biệt (Không cần READY, gửi để Arduino cộng/trừ giây)
-    if is_special_now:
-        ser.write(data_str.encode())
-        if not last_special_state:
-            print(f"🚨 CẬP NHẬT KHẨN CẤP: {data_str.strip()}")
-            last_special_state = True
-            waiting_for_ready = True # Khóa Safe Mode lại
+    # 2. Xử lý Gửi dữ liệu khẩn cấp (Mỗi sự kiện khẩn cấp chỉ gửi đúng 1 lần duy nhất trong chu kỳ)
+    send_emergency = False
+    if prio_special and not prio_sent_this_cycle:
+        send_emergency = True
+        prio_sent_this_cycle = True
+    if empty_special and not empty_sent_this_cycle:
+        send_emergency = True
+        empty_sent_this_cycle = True
 
-    # 3. Gửi dữ liệu Safe Mode (Chỉ khi nhận được READY và không có sự kiện đặc biệt)
-    elif not waiting_for_ready:
+    if send_emergency:
+        ser.write(data_str.encode())
+        print(f"🚨 CẬP NHẬT KHẨN CẤP: {data_str.strip()}")
+        waiting_for_ready = True # Khóa gửi dữ liệu chu kỳ lại, đợi READY tiếp theo
+
+    # 3. Gửi dữ liệu Chu kỳ (Chỉ Gửi khi nhận được READY)
+    # Gửi cả khi L1-4 đều = 0 (tránh đè dữ liệu vì chỉ gửi 1 lần)
+    if not waiting_for_ready:
         ser.write(data_str.encode())
         print(f"✅ GỬI DATA CHU KỲ: {data_str.strip()}")
         waiting_for_ready = True
-        last_special_state = False
 
     # Hiển thị cảnh báo ưu tiên lên màn hình
     if priority_lane != "0":
